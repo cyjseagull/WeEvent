@@ -6,6 +6,7 @@ import com.webank.weevent.core.config.FiscoConfig;
 import com.webank.weevent.core.fisco.FiscoBcosBroker4Consumer;
 import com.webank.weevent.core.fisco.FiscoBcosBroker4Producer;
 import com.webank.weevent.core.fisco.web3sdk.FiscoBcosDelegate;
+import org.fisco.bcos.sdk.BcosSDK;
 
 /**
  * FISCO-BCOS instance.
@@ -59,9 +60,9 @@ import com.webank.weevent.core.fisco.web3sdk.FiscoBcosDelegate;
 public class FiscoBcosInstance {
     private final FiscoBcosDelegate fiscoBcosDelegate;
 
-    public FiscoBcosInstance(FiscoConfig config) throws BrokerException {
+    public FiscoBcosInstance(BcosSDK sdk, FiscoConfig config) throws BrokerException {
         this.fiscoBcosDelegate = new FiscoBcosDelegate();
-        this.fiscoBcosDelegate.initProxy(config);
+        this.fiscoBcosDelegate.initProxy(sdk, config);
     }
 
     /**

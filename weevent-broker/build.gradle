@@ -29,17 +29,12 @@ dependencies {
     implementation("com.github.briandilley.jsonrpc4j:jsonrpc4j:${jsonrpc4jVersion}")
 
     // discovery
-    implementation("org.springframework.cloud:spring-cloud-starter-zookeeper-discovery") {
-        exclude group: "commons-logging", module: "commons-logging"
-    }
+    implementation("org.springframework.cloud:spring-cloud-starter-zookeeper-discovery")
 
     // web3sdk for FISCO-BCOS 2.0
-    implementation("org.fisco-bcos:web3sdk:${web3sdkVersion.fisco}") {
-        // io.netty:netty-tcnative-boringssl-static:2.0.20.Final crash
-        exclude group: "io.netty"
-        // compile solidity
-        exclude group: "org.ethereum", module: "solcJ-all"
-    }
+    implementation("org.fisco-bcos:java-sdk:${javaSDKVersion.fisco}")
+    /*dependencies { compile fileTree(dir:'../lib',include:['*.jar'])}
+    compile files("../lib/java-sdk-1.0.0-SNAPSHOT.jar")*/
 
     // depend project
     api project(":weevent-core")

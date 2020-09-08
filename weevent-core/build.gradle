@@ -1,15 +1,18 @@
 apply plugin: "io.spring.dependency-management"
 apply plugin: "signing"
-
+def spring_version = "4.3.27.RELEASE"
+List spring = [
+        "org.springframework:spring-core:$spring_version",
+        "org.springframework:spring-beans:$spring_version",
+        "org.springframework:spring-context:$spring_version",
+        "org.springframework:spring-tx:$spring_version",
+]
 dependencies {
+    compile spring
     // web3sdk for FISCO-BCOS 2.0
-    implementation("org.fisco-bcos:web3sdk:${web3sdkVersion.fisco}") {
-        // io.netty:netty-tcnative-boringssl-static:2.0.20.Final crash
-        exclude group: "io.netty"
-        // compile solidity
-        exclude group: "org.ethereum", module: "solcJ-all"
-    }
-
+    implementation("org.fisco-bcos:java-sdk:${javaSDKVersion.fisco}")
+    /*dependencies { compile fileTree(dir:'../lib',include:['*.jar'])}
+    compile files("../lib/java-sdk-1.0.0-SNAPSHOT.jar")*/
     // fabric 1.4.4
     implementation("org.hyperledger.fabric-sdk-java:fabric-sdk-java:${fabricVersion}")
 

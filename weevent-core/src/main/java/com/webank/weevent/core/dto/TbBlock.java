@@ -31,4 +31,67 @@ public class TbBlock {
         this.sealerIndex = sealerIndex;
     }
 
+    public String getPkHash() {
+        return pkHash;
+    }
+
+    public void setPkHash(String pkHash) {
+        this.pkHash = pkHash;
+    }
+
+    public BigInteger getBlockNumber() {
+        return blockNumber;
+    }
+
+    public void setBlockNumber(BigInteger blockNumber) {
+        this.blockNumber = blockNumber;
+    }
+
+    public String getBlockTimestamp() {
+        return blockTimestamp;
+    }
+
+    public void setBlockTimestamp(String blockTimestamp) {
+        this.blockTimestamp = blockTimestamp;
+    }
+
+    public int getTransCount() {
+        return transCount;
+    }
+
+    public void setTransCount(int transCount) {
+        this.transCount = transCount;
+    }
+
+    public int getSealerIndex() {
+        return sealerIndex;
+    }
+
+    public void setSealerIndex(int sealerIndex) {
+        this.sealerIndex = sealerIndex;
+    }
+
+    public String getSealer() {
+        return sealer;
+    }
+
+    public void setSealer(String sealer) {
+        this.sealer = sealer;
+    }
+
+    public String getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(String createTime) {
+        this.createTime = createTime;
+    }
+
+    public String getModifyTime() {
+        return modifyTime;
+    }
+
+    public void setModifyTime(String modifyTime) {
+        this.modifyTime = modifyTime;
+    }
 }

@@ -29,7 +29,8 @@ import com.webank.weevent.core.fisco.web3sdk.v2.Web3SDKConnector;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.fisco.bcos.web3j.utils.Async;
+import org.fisco.bcos.sdk.BcosSDK;
+import org.fisco.bcos.sdk.utils.Numeric;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
@@ -45,7 +46,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 @Slf4j
 public class FiscoBcosDelegate {
     // access to version 2.x
-    private final Map<Long, FiscoBcos2> fiscoBcos2Map = new ConcurrentHashMap<>();
+    private final Map<Integer, FiscoBcos2> fiscoBcos2Map = new ConcurrentHashMap<>();
 
     // AMOP subscription
     //private final Map<Long, AMOPSubscription> AMOPSubscriptions = new ConcurrentHashMap<>();
@@ -59,8 +60,6 @@ public class FiscoBcosDelegate {
     // fiscoConfig
     private FiscoConfig fiscoConfig;
 
-    private Async asyncHelper;
-
     /**
      * notify from web3sdk2.x when new block mined
      */
@@ -72,7 +71,7 @@ public class FiscoBcosDelegate {
         void onEvent(Long groupId, Long blockHeight);
     }
 
-    public void initProxy(FiscoConfig config) throws BrokerException {
+    public void initProxy(BcosSDK sdk, FiscoConfig config) throws BrokerException {
         this.fiscoConfig = config;
         this.threadPool = Web3SDKConnector.initThreadPool(config.getWeb3sdkCorePoolSize(),
                 config.getWeb3sdkMaxPoolSize(),
@@ -90,13 +89,10 @@ public class FiscoBcosDelegate {
         if (config.getVersion().startsWith(WeEventConstants.FISCO_BCOS_2_X_VERSION_PREFIX)) {
             log.info("Notice: FISCO-BCOS's version is 2.x");
 
-            // set web3sdk.Async thread pool, special thread for sendAsync
-            this.asyncHelper = new Async(threadPool);
-
             // 1 is always exist
-            Long defaultGId = Long.valueOf(WeEvent.DEFAULT_GROUP_ID);
+            Integer defaultGId = Integer.valueOf(WeEvent.DEFAULT_GROUP_ID);
             FiscoBcos2 defaultFiscoBcos2 = new FiscoBcos2(config);
-            defaultFiscoBcos2.init(defaultGId);
+            defaultFiscoBcos2.init(sdk, defaultGId);
             this.fiscoBcos2Map.put(defaultGId, defaultFiscoBcos2);
             // this call need default group has been initialized
             List<String> groups = this.listGroupId();
@@ -134,7 +130,7 @@ public class FiscoBcosDelegate {
     public void setListener(@NonNull IBlockEventListener listener) {
         log.info("set IBlockEventListener for every group for FISCO-BCOS 2.x");
 
-        for (Map.Entry<Long, FiscoBcos2> entry : fiscoBcos2Map.entrySet()) {
+        for (Map.Entry<Integer, FiscoBcos2> entry : fiscoBcos2Map.entrySet()) {
             entry.getValue().setListener(listener);
         }
     }
@@ -198,9 +194,9 @@ public class FiscoBcosDelegate {
      * @return list of WeEvent
      * @throws BrokerException BrokerException
      */
-    public List<WeEvent> loop(Long blockNum, Long groupId) throws BrokerException {
+    public List<WeEvent> loop(BigInteger blockNum, Integer groupId) throws BrokerException {
         List<WeEvent> events = new ArrayList<>();
-        if (blockNum <= 0) {
+        if (blockNum.compareTo(BigInteger.ZERO) <= 0) {
             return events;
         }
 
@@ -254,16 +250,15 @@ public class FiscoBcosDelegate {
         return this.fiscoBcos2Map.get(groupId).sendAMOP(topicName, content);
     }
 
-    public Map<Long, AMOPSubscription> initAMOP() {
-        Map<Long, AMOPSubscription> AMOPSubscriptions = new ConcurrentHashMap<>();
+    public Map<Integer, AMOPSubscription> initAMOP() {
+        Map<Integer, AMOPSubscription> AMOPSubscriptions = new ConcurrentHashMap<>();
 
-        for (Map.Entry<Long, FiscoBcos2> entry : this.fiscoBcos2Map.entrySet()) {
+        for (Map.Entry<Integer, FiscoBcos2> entry : this.fiscoBcos2Map.entrySet()) {
             log.info("init AMOP for group: {}", entry.getKey());
 
             AMOPSubscription amopSubscription = new AMOPSubscription(String.valueOf(entry.getKey()), entry.getValue().getService());
             AMOPSubscriptions.put(entry.getKey(), amopSubscription);
         }
-
         return AMOPSubscriptions;
     }
 }

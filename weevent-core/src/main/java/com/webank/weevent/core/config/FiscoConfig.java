@@ -78,4 +78,128 @@ public class FiscoConfig {
     public boolean load(String configFile) {
         return new SmartLoadConfig().load(this, configFile, propertiesFileKey);
     }
+
+    public static String getPropertiesFileKey() {
+        return propertiesFileKey;
+    }
+
+    public String getVersion() {
+        return version;
+    }
+
+    public void setVersion(String version) {
+        this.version = version;
+    }
+
+    public String getOrgId() {
+        return orgId;
+    }
+
+    public void setOrgId(String orgId) {
+        this.orgId = orgId;
+    }
+
+    public String getNodes() {
+        return nodes;
+    }
+
+    public void setNodes(String nodes) {
+        this.nodes = nodes;
+    }
+
+    public String getAccount() {
+        return account;
+    }
+
+    public void setAccount(String account) {
+        this.account = account;
+    }
+
+    public Integer getWeb3sdkTimeout() {
+        return web3sdkTimeout;
+    }
+
+    public void setWeb3sdkTimeout(Integer web3sdkTimeout) {
+        this.web3sdkTimeout = web3sdkTimeout;
+    }
+
+    public Integer getWeb3sdkCorePoolSize() {
+        return web3sdkCorePoolSize;
+    }
+
+    public void setWeb3sdkCorePoolSize(Integer web3sdkCorePoolSize) {
+        this.web3sdkCorePoolSize = web3sdkCorePoolSize;
+    }
+
+    public Integer getWeb3sdkMaxPoolSize() {
+        return web3sdkMaxPoolSize;
+    }
+
+    public void setWeb3sdkMaxPoolSize(Integer web3sdkMaxPoolSize) {
+        this.web3sdkMaxPoolSize = web3sdkMaxPoolSize;
+    }
+
+    public Integer getWeb3sdkKeepAliveSeconds() {
+        return web3sdkKeepAliveSeconds;
+    }
+
+    public void setWeb3sdkKeepAliveSeconds(Integer web3sdkKeepAliveSeconds) {
+        this.web3sdkKeepAliveSeconds = web3sdkKeepAliveSeconds;
+    }
+
+    public String getWeb3sdkEncryptType() {
+        return web3sdkEncryptType;
+    }
+
+    public void setWeb3sdkEncryptType(String web3sdkEncryptType) {
+        this.web3sdkEncryptType = web3sdkEncryptType;
+    }
+
+    public String getCaCrtPath() {
+        return CaCrtPath;
+    }
+
+    public void setCaCrtPath(String caCrtPath) {
+        CaCrtPath = caCrtPath;
+    }
+
+    public String getSdkCrtPath() {
+        return SdkCrtPath;
+    }
+
+    public void setSdkCrtPath(String sdkCrtPath) {
+        SdkCrtPath = sdkCrtPath;
+    }
+
+    public String getSdkKeyPath() {
+        return SdkKeyPath;
+    }
+
+    public void setSdkKeyPath(String sdkKeyPath) {
+        SdkKeyPath = sdkKeyPath;
+    }
+
+    public String getPemKeyPath() {
+        return PemKeyPath;
+    }
+
+    public void setPemKeyPath(String pemKeyPath) {
+        PemKeyPath = pemKeyPath;
+    }
+
+    public Integer getConsumerIdleTime() {
+        return consumerIdleTime;
+    }
+
+    public void setConsumerIdleTime(Integer consumerIdleTime) {
+        this.consumerIdleTime = consumerIdleTime;
+    }
+
+    public Integer getConsumerHistoryMergeBlock() {
+        return consumerHistoryMergeBlock;
+    }
+
+    public void setConsumerHistoryMergeBlock(Integer consumerHistoryMergeBlock) {
+        this.consumerHistoryMergeBlock = consumerHistoryMergeBlock;
+    }
 }

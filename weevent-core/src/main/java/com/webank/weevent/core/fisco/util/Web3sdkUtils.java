@@ -1,27 +1,30 @@
 package com.webank.weevent.core.fisco.util;
-
-
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.webank.weevent.client.BrokerException;
-import com.webank.weevent.client.WeEvent;
 import com.webank.weevent.core.config.FiscoConfig;
 import com.webank.weevent.core.fisco.constant.WeEventConstants;
 import com.webank.weevent.core.fisco.web3sdk.v2.CRUDAddress;
 import com.webank.weevent.core.fisco.web3sdk.v2.SupportedVersion;
 import com.webank.weevent.core.fisco.web3sdk.v2.Web3SDK2Wrapper;
-import com.webank.weevent.core.fisco.web3sdk.v2.Web3SDKConnector;
 
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.fisco.bcos.sdk.BcosSDK;
+import org.fisco.bcos.sdk.client.Client;
+import org.fisco.bcos.sdk.client.exceptions.ClientException;
+import org.fisco.bcos.sdk.service.GroupManagerService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 @Getter
@@ -50,10 +53,12 @@ class EchoAddress {
  */
 @Slf4j
 public class Web3sdkUtils {
+    private static Logger logger = LoggerFactory.getLogger(Web3sdkUtils.class);
 
     public static void main(String[] args) {
         try {
             FiscoConfig fiscoConfig = new FiscoConfig();
+            String configFilePath = Web3sdkUtils.class.getClassLoader().getResource("config.toml").getPath();
             fiscoConfig.load("");
             ThreadPoolTaskExecutor taskExecutor = new ThreadPoolTaskExecutor();
             taskExecutor.initialize();
@@ -64,7 +69,7 @@ public class Web3sdkUtils {
             }
 
             if (fiscoConfig.getVersion().startsWith(WeEventConstants.FISCO_BCOS_2_X_VERSION_PREFIX)) {    // 2.0x
-                if (!deployV2Contract(fiscoConfig)) {
+                if (!deployV2Contract(configFilePath)) {
                     systemExit(1);
                 }
             } else {
@@ -80,53 +85,39 @@ public class Web3sdkUtils {
         systemExit(0);
     }
 
-    public static boolean deployV2Contract(FiscoConfig fiscoConfig) throws BrokerException {
-        org.fisco.bcos.web3j.crypto.Credentials credentials = Web3SDKConnector.getCredentials(fiscoConfig);
-
-        Map<Long, org.fisco.bcos.web3j.protocol.Web3j> groups = new HashMap<>();
-        // 1 is always exist
-        Long defaultGroup = Long.valueOf(WeEvent.DEFAULT_GROUP_ID);
-        org.fisco.bcos.web3j.protocol.Web3j defaultWeb3j = Web3SDKConnector.initWeb3j(Web3SDKConnector.initService(defaultGroup, fiscoConfig));
-        groups.put(defaultGroup, defaultWeb3j);
-
-        List<String> groupIds = Web3SDKConnector.listGroupId(defaultWeb3j, fiscoConfig.getWeb3sdkTimeout());
-        groupIds.remove(WeEvent.DEFAULT_GROUP_ID);
-        for (String groupId : groupIds) {
-            Long gid = Long.valueOf(groupId);
-            org.fisco.bcos.web3j.protocol.Web3j web3j = Web3SDKConnector.initWeb3j(Web3SDKConnector.initService(gid, fiscoConfig));
-            groups.put(gid, web3j);
-        }
-        log.info("all group in nodes: {}", groups.keySet());
-
-        // deploy topic control contract for every group
-        Map<Long, List<EchoAddress>> echoAddresses = new HashMap<>();
-        for (Map.Entry<Long, org.fisco.bcos.web3j.protocol.Web3j> e : groups.entrySet()) {
+    public static boolean deployV2Contract(String configFilePath) throws BrokerException{
+        FiscoConfig fiscoConfig = new FiscoConfig();
+        BcosSDK bcosSDK = new BcosSDK(configFilePath);
+        GroupManagerService groupManagerService = bcosSDK.getGroupManagerService();
+        Set<Integer> groupList = groupManagerService.getGroupList();
+        logger.info("all group in nodes: {}", groupList.toString());
+        Map<Integer, List<EchoAddress>> echoAddresses = new HashMap<>();
+        for(Integer groupId: groupList)
+        {
             List<EchoAddress> groupAddress = new ArrayList<>();
-            if (!dealOneGroup(e.getKey(), e.getValue(), credentials, groupAddress, fiscoConfig.getWeb3sdkTimeout())) {
+            Client client = bcosSDK.getClient(groupId);
+            if (!dealOneGroup(client, groupAddress, fiscoConfig.getWeb3sdkTimeout())) {
                 return false;
             }
-            echoAddresses.put(e.getKey(), groupAddress);
+            echoAddresses.put(groupId, groupAddress);
         }
-
         System.out.println(nowTime() + " topic control address in every group:");
-        for (Map.Entry<Long, List<EchoAddress>> e : echoAddresses.entrySet()) {
-            System.out.println("topic control address in group: " + e.getKey());
-            for (EchoAddress address : e.getValue()) {
+        for(Map.Entry<Integer, List<EchoAddress>> addressInfo: echoAddresses.entrySet())
+        {
+            System.out.println("topic control address in group: " + addressInfo.getKey());
+            for (EchoAddress address : addressInfo.getValue()) {
                 System.out.println("\t" + address.toString());
             }
         }
-
         return true;
     }
 
-    private static boolean dealOneGroup(Long groupId,
-                                        org.fisco.bcos.web3j.protocol.Web3j web3j,
-                                        org.fisco.bcos.web3j.crypto.Credentials credentials,
+    private static boolean dealOneGroup(Client client,
                                         List<EchoAddress> groupAddress,
                                         int timeout) throws BrokerException {
-        CRUDAddress crudAddress = new CRUDAddress(web3j, credentials);
+        CRUDAddress crudAddress = new CRUDAddress(client);
         Map<Long, String> original = crudAddress.listAddress();
-        log.info("address list in CRUD groupId: {}, {}", groupId, original);
+        log.info("address list in CRUD groupId: {}, {}", client.getGroupId(), original);
 
         // if nowVersion exist
         boolean exist = false;
@@ -136,7 +127,7 @@ public class Web3sdkUtils {
             groupAddress.add(new EchoAddress(topicControlAddress.getKey(), topicControlAddress.getValue(), false));
 
             if (!SupportedVersion.history.contains(topicControlAddress.getKey())) {
-                log.error("unknown solidity version in group: {} CRUD: {}", groupId, topicControlAddress.getKey());
+                log.error("unknown solidity version in group: {} CRUD: {}", client.getGroupId(), topicControlAddress.getKey());
                 return false;
             }
 
@@ -150,18 +141,18 @@ public class Web3sdkUtils {
         }
 
         if (exist) {
-            log.info("find topic control address in now version groupId: {}, skip", groupId);
+            log.info("find topic control address in now version groupId: {}, skip", client.getGroupId());
             return true;
         }
 
         // deploy topic control
-        String topicControlAddress = Web3SDK2Wrapper.deployTopicControl(web3j, credentials, timeout);
-        log.info("deploy topic control success, group: {} version: {} address: {}", groupId, SupportedVersion.nowVersion, topicControlAddress);
+        String topicControlAddress = Web3SDK2Wrapper.deployTopicControl(client, timeout);
+        log.info("deploy topic control success, group: {} version: {} address: {}", client.getGroupId(), SupportedVersion.nowVersion, topicControlAddress);
 
         // flush topic info from low into new version
         if (highestVersion > 0L && highestVersion < SupportedVersion.nowVersion) {
             System.out.println(String.format("flush topic info from low version, %d -> %d", highestVersion, SupportedVersion.nowVersion));
-            boolean result = SupportedVersion.flushData(web3j, credentials, original, highestVersion, SupportedVersion.nowVersion, timeout);
+            boolean result = SupportedVersion.flushData(client, original, highestVersion, SupportedVersion.nowVersion, timeout);
             if (!result) {
                 log.error("flush topic info data failed, {} -> {}", highestVersion, SupportedVersion.nowVersion);
                 return false;
@@ -170,7 +161,7 @@ public class Web3sdkUtils {
 
         // save topic control address into CRUD
         boolean result = crudAddress.addAddress(SupportedVersion.nowVersion, topicControlAddress);
-        log.info("save topic control address into CRUD, group: {} result: {}", groupId, result);
+        log.info("save topic control address into CRUD, group: {} result: {}", client.getGroupId(), result);
         if (result) {
             groupAddress.add(new EchoAddress(SupportedVersion.nowVersion, topicControlAddress, true));
         }

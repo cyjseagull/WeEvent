@@ -104,6 +104,14 @@ public class WeEvent {
         this.extensions = extensions;
     }
 
+    public String getEventId() {
+        return eventId;
+    }
+
+    public void setEventId(String eventId) {
+        this.eventId = eventId;
+    }
+
     @Override
     public String toString() {
         return "WeEvent{" +

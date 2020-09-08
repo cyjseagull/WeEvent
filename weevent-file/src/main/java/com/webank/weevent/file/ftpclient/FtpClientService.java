@@ -348,4 +348,24 @@ public class FtpClientService {
         }
         return filePathList;
     }
+
+    public static String getPathSeparator() {
+        return PATH_SEPARATOR;
+    }
+
+    public FTPClient getFtpClient() {
+        return ftpClient;
+    }
+
+    public void setFtpClient(FTPClient ftpClient) {
+        this.ftpClient = ftpClient;
+    }
+
+    public String getDefaultDir() {
+        return defaultDir;
+    }
+
+    public void setDefaultDir(String defaultDir) {
+        this.defaultDir = defaultDir;
+    }
 }

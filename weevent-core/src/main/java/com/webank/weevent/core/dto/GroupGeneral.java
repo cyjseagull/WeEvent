@@ -13,4 +13,27 @@ public class GroupGeneral {
     private BigInteger transactionCount = BigInteger.ZERO;
     private BigInteger latestBlock = BigInteger.ZERO;
 
+    public int getNodeCount() {
+        return nodeCount;
+    }
+
+    public void setNodeCount(int nodeCount) {
+        this.nodeCount = nodeCount;
+    }
+
+    public BigInteger getTransactionCount() {
+        return transactionCount;
+    }
+
+    public void setTransactionCount(BigInteger transactionCount) {
+        this.transactionCount = transactionCount;
+    }
+
+    public BigInteger getLatestBlock() {
+        return latestBlock;
+    }
+
+    public void setLatestBlock(BigInteger latestBlock) {
+        this.latestBlock = latestBlock;
+    }
 }

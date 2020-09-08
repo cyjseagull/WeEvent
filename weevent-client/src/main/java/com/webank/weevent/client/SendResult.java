@@ -48,4 +48,27 @@ public class SendResult {
         this.status = status;
     }
 
+    public SendResultStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(SendResultStatus status) {
+        this.status = status;
+    }
+
+    public String getTopic() {
+        return topic;
+    }
+
+    public void setTopic(String topic) {
+        this.topic = topic;
+    }
+
+    public String getEventId() {
+        return eventId;
+    }
+
+    public void setEventId(String eventId) {
+        this.eventId = eventId;
+    }
 }

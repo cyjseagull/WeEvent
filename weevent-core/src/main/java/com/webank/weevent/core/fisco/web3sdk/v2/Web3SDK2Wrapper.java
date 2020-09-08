@@ -11,13 +11,11 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 import com.webank.weevent.client.BrokerException;
 import com.webank.weevent.client.ErrorCode;
-import com.webank.weevent.client.JsonHelper;
 import com.webank.weevent.client.WeEvent;
 import com.webank.weevent.core.dto.GroupGeneral;
 import com.webank.weevent.core.dto.ListPage;
@@ -29,27 +27,28 @@ import com.webank.weevent.core.fisco.util.DataTypeUtils;
 import com.webank.weevent.core.fisco.web3sdk.FiscoBcosDelegate;
 import com.webank.weevent.core.fisco.web3sdk.v2.solc10.Topic;
 import com.webank.weevent.core.fisco.web3sdk.v2.solc10.TopicController;
-
-import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.fisco.bcos.web3j.crypto.Credentials;
-import org.fisco.bcos.web3j.protocol.Web3j;
-import org.fisco.bcos.web3j.protocol.Web3jService;
-import org.fisco.bcos.web3j.protocol.channel.ChannelEthereumService;
-import org.fisco.bcos.web3j.protocol.core.DefaultBlockParameter;
-import org.fisco.bcos.web3j.protocol.core.DefaultBlockParameterNumber;
-import org.fisco.bcos.web3j.protocol.core.JsonRpc2_0Web3j;
-import org.fisco.bcos.web3j.protocol.core.RemoteCall;
-import org.fisco.bcos.web3j.protocol.core.methods.response.BcosBlock;
-import org.fisco.bcos.web3j.protocol.core.methods.response.BcosTransactionReceipt;
-import org.fisco.bcos.web3j.protocol.core.methods.response.BlockNumber;
-import org.fisco.bcos.web3j.protocol.core.methods.response.NodeIDList;
-import org.fisco.bcos.web3j.protocol.core.methods.response.TotalTransactionCount;
-import org.fisco.bcos.web3j.protocol.core.methods.response.Transaction;
-import org.fisco.bcos.web3j.protocol.core.methods.response.TransactionReceipt;
-import org.fisco.bcos.web3j.tx.Contract;
-import org.fisco.bcos.web3j.tx.gas.ContractGasProvider;
+import org.fisco.bcos.sdk.BcosSDK;
+import org.fisco.bcos.sdk.client.Client;
+import org.fisco.bcos.sdk.client.exceptions.ClientException;
+import org.fisco.bcos.sdk.client.protocol.model.JsonTransactionResponse;
+import org.fisco.bcos.sdk.client.protocol.request.Transaction;
+import org.fisco.bcos.sdk.client.protocol.response.BcosBlock;
+import org.fisco.bcos.sdk.client.protocol.response.BlockNumber;
+import org.fisco.bcos.sdk.client.protocol.response.ConsensusStatus;
+import org.fisco.bcos.sdk.client.protocol.response.NodeIDList;
+import org.fisco.bcos.sdk.client.protocol.response.Peers;
+import org.fisco.bcos.sdk.client.protocol.response.SyncStatus;
+import org.fisco.bcos.sdk.client.protocol.response.TotalTransactionCount;
+import org.fisco.bcos.sdk.contract.Contract;
+import org.fisco.bcos.sdk.contract.exceptions.ContractException;
+import org.fisco.bcos.sdk.crypto.CryptoInterface;
+import org.fisco.bcos.sdk.model.TransactionReceipt;
+import org.fisco.bcos.sdk.service.GroupManagerService;
+import org.fisco.bcos.sdk.service.callback.BlockNumberNotifyCallback;
+import org.fisco.bcos.sdk.service.model.BlockNumberNotification;
+import org.fisco.bcos.sdk.utils.Numeric;
 
 /**
  * Wrapper of Web3SDK 2.x function.
@@ -66,66 +65,40 @@ public class Web3SDK2Wrapper {
     public final static String PEERS = "peers";
     public final static String VIEW = "view";
 
-    // static gas provider
-    public static final ContractGasProvider gasProvider = new ContractGasProvider() {
-        @Override
-        public BigInteger getGasPrice(String contractFunc) {
-            return WeEventConstants.GAS_PRICE;
-        }
+    public static void setBlockNotifyCallBack(BcosSDK sdk, FiscoBcosDelegate.IBlockEventListener listener) {
+        sdk.getGroupManagerService().registerBlockNotifyCallback(new BlockNumberNotifyCallback() {
+            @Override
+            public void onReceiveBlockNumberInfo(String s, BlockNumberNotification blockNumberNotification) {
+                listener.onEvent(Long.parseLong(blockNumberNotification.getGroupId()),
+                        Long.parseLong(blockNumberNotification.getBlockNumber()));
 
-        @Override
-        @Deprecated
-        public BigInteger getGasPrice() {
-            return WeEventConstants.GAS_PRICE;
-        }
-
-        @Override
-        public BigInteger getGasLimit(String contractFunc) {
-            return WeEventConstants.GAS_LIMIT;
-        }
-
-        @Override
-        @Deprecated
-        public BigInteger getGasLimit() {
-            return WeEventConstants.GAS_LIMIT;
-        }
-    };
-
-    public static void setBlockNotifyCallBack(Web3j web3j, FiscoBcosDelegate.IBlockEventListener listener) {
-        Web3jService web3jService = ((JsonRpc2_0Web3j) web3j).web3jService();
-        ((ChannelEthereumService) web3jService).getChannelService().setBlockNotifyCallBack(
-                (int groupID, BigInteger blockNumber) -> listener.onEvent((long) groupID, blockNumber.longValue())
-        );
+            }
+        });
     }
 
     /*
      * load contract handler
      *
      * @param contractAddress contractAddress
-     * @param web3j web3j
      * @param credentials credentials
      * @param cls contract java class
      * @param timeout time out in ms
      * @return Contract return null if error
      */
-    public static Contract loadContract(String contractAddress, Web3j web3j, Credentials credentials, Class<?> cls) throws BrokerException {
+    public static Contract loadContract(String contractAddress, Client client, Class<?> cls) throws BrokerException {
         log.info("begin load contract, {}", cls.getSimpleName());
 
         try {
             // load contract
             Method method = cls.getMethod("load",
                     String.class,
-                    Web3j.class,
-                    Credentials.class,
-                    BigInteger.class,
-                    BigInteger.class);
+                    Client.class,
+                    CryptoInterface.class);
 
             Object contract = method.invoke(null,
                     contractAddress,
-                    web3j,
-                    credentials,
-                    WeEventConstants.GAS_PRICE,
-                    WeEventConstants.GAS_LIMIT);
+                    client,
+                    client.getCryptoInterface());
 
             if (contract != null) {
                 log.info("load contract success, {}", cls.getSimpleName());
@@ -141,21 +114,18 @@ public class Web3SDK2Wrapper {
     }
 
     /*
-     * deploy topic control into web3j in Web3SDK2Wrapper.nowVersion
+     * deploy topic control into client in Web3SDK2Wrapper.nowVersion
      *
-     * @param web3j web3j handler
      * @param credentials credentials
      * @param timeout time out in ms
      * @return contract address
      * @throws BrokerException BrokerException
      */
-    public static String deployTopicControl(Web3j web3j, Credentials credentials, int timeout) throws BrokerException {
+    public static String deployTopicControl(Client client, int timeout) throws BrokerException {
         log.info("begin deploy topic control");
-
         try {
             // deploy Topic.sol in highest version(Web3SDK2Wrapper.nowVersion)
-            RemoteCall<Topic> f1 = Topic.deploy(web3j, credentials, gasProvider);
-            Topic topic = f1.sendAsync().get(timeout, TimeUnit.MILLISECONDS);
+            Topic topic = Topic.deploy(client, client.getCryptoInterface());
             log.info("topic contract address: {}", topic.getContractAddress());
             if (topic.getContractAddress().equals(WeEventConstants.ADDRESS_EMPTY)) {
                 log.error("contract address is empty after Topic.deploy(...)");
@@ -163,8 +133,7 @@ public class Web3SDK2Wrapper {
             }
 
             // deploy TopicController.sol in nowVersion
-            RemoteCall<TopicController> f2 = TopicController.deploy(web3j, credentials, gasProvider, topic.getContractAddress());
-            TopicController topicController = f2.sendAsync().get(timeout, TimeUnit.MILLISECONDS);
+            TopicController topicController = TopicController.deploy(client, client.getCryptoInterface(), topic.getContractAddress());
             log.info("topic control contract address: {}", topicController.getContractAddress());
             if (topicController.getContractAddress().equals(WeEventConstants.ADDRESS_EMPTY)) {
                 log.error("contract address is empty after TopicController.deploy(...)");
@@ -173,7 +142,7 @@ public class Web3SDK2Wrapper {
 
             log.info("deploy topic control success");
             return topicController.getContractAddress();
-        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+        } catch (InterruptedException | ContractException | TimeoutException e) {
             log.error("deploy contract failed", e);
             throw new BrokerException(ErrorCode.DEPLOY_CONTRACT_ERROR);
         }
@@ -182,13 +151,13 @@ public class Web3SDK2Wrapper {
     /*
      * getBlockHeight
      *
-     * @param web3j web3j
+     * @param client client
      * @param timeout time out in ms
      * @return 0L if net error
      */
-    public static Long getBlockHeight(Web3j web3j, int timeout) throws BrokerException {
+    public static Long getBlockHeight(Client client, int timeout) throws BrokerException {
         try {
-            BlockNumber blockNumber = web3j.getBlockNumber().sendAsync().get(timeout, TimeUnit.MILLISECONDS);
+            BlockNumber blockNumber = client.getBlockNumber();
             // Web3sdk's rpc return null in "get".
             if (blockNumber == null) {
                 return 0L;
@@ -205,19 +174,19 @@ public class Web3SDK2Wrapper {
     /*
      * Fetch all event in target block.
      *
-     * @param web3j the web3j
+     * @param client the client
      * @param blockNum the blockNum
      * @param supportedVersion version list
      * @param historyTopic topic list
      * @param timeout time out in ms
      * @return null if net error
      */
-    public static List<WeEvent> loop(Web3j web3j, Long blockNum,
+    public static List<WeEvent> loop(Client client, BigInteger blockNum,
                                      Map<String, Long> supportedVersion,
                                      Map<String, Contract> historyTopic,
                                      int timeout) throws BrokerException {
         List<WeEvent> events = new ArrayList<>();
-        if (blockNum <= 0) {
+        if (blockNum.compareTo(BigInteger.ZERO) <= 0) {
             return events;
         }
 
@@ -225,9 +194,9 @@ public class Web3SDK2Wrapper {
             log.debug("fetch block, blockNum: {}", blockNum);
 
             // "false" to load only tx hash.
-            BcosBlock bcosBlock = web3j.getBlockByNumber(new DefaultBlockParameterNumber(blockNum), false)
-                    .sendAsync().get(timeout, TimeUnit.MILLISECONDS);
-            BigInteger timestamp = bcosBlock.getBlock().getTimestamp();
+            BcosBlock bcosBlock = client.getBlockByNumber(blockNum, false);
+            BigInteger timestamp = new BigInteger(bcosBlock.getBlock().getTimestamp(), 16);
+            bcosBlock.getBlock().getTransactions();
             List<String> transactionHashList = bcosBlock.getBlock().getTransactions().stream()
                     .map(transactionResult -> (String) transactionResult.get()).collect(Collectors.toList());
             if (transactionHashList.isEmpty()) {
@@ -236,14 +205,11 @@ public class Web3SDK2Wrapper {
             log.debug("tx in block: {}", transactionHashList.size());
 
             for (String transactionHash : transactionHashList) {
-                BcosTransactionReceipt transactionReceipt = web3j.getTransactionReceipt(transactionHash)
-                        .sendAsync().get(timeout, TimeUnit.MILLISECONDS);
-                if (!transactionReceipt.getTransactionReceipt().isPresent()) {
+                TransactionReceipt receipt = client.getTransactionReceipt(transactionHash).getTransactionReceipt().get();
+                if (receipt == null) {
                     log.error(String.format("loop block empty tx receipt, blockNum: %s tx hash: %s", blockNum, transactionHash));
                     return null;
                 }
-
-                TransactionReceipt receipt = transactionReceipt.getTransactionReceipt().get();
                 // tx.to is contract address
                 String address = receipt.getTo();
                 if (historyTopic.containsKey(address)) {
@@ -269,17 +235,16 @@ public class Web3SDK2Wrapper {
         }
     }
 
-    public static GroupGeneral getGroupGeneral(Web3j web3j, int timeout) throws BrokerException {
+    public static GroupGeneral getGroupGeneral(Client client, int timeout) throws BrokerException {
         // Current number of nodes, number of blocks, number of transactions
         GroupGeneral groupGeneral = new GroupGeneral();
         try {
-            TotalTransactionCount totalTransactionCount = web3j.getTotalTransactionCount()
-                    .sendAsync().get();
-            TotalTransactionCount.TransactionCount transactionCount = totalTransactionCount.getTotalTransactionCount();
-            BigInteger blockNumber = transactionCount.getBlockNumber();
-            BigInteger txSum = transactionCount.getTxSum();
+            TotalTransactionCount totalTransactionCount = client.getTotalTransactionCount();
+            TotalTransactionCount.TransactionCountInfo transactionCount = totalTransactionCount.getTotalTransactionCount();
+            BigInteger blockNumber = Numeric.decodeQuantity(transactionCount.getBlockNumber());
+            BigInteger txSum = Numeric.decodeQuantity(transactionCount.getTxSum());
 
-            NodeIDList nodeIDList = web3j.getNodeIDList().sendAsync().get(timeout, TimeUnit.MILLISECONDS);
+            NodeIDList nodeIDList = client.getNodeIDList();
             List<String> nodeIds = nodeIDList.getNodeIDList();
 
             groupGeneral.setNodeCount(nodeIds.size());
@@ -294,25 +259,23 @@ public class Web3SDK2Wrapper {
     }
 
     //Traversing transactions
-    public static ListPage<TbTransHash> queryTransList(Web3j web3j, String blockHash, BigInteger blockNumber, Integer pageIndex, Integer pageSize, int timeout) throws BrokerException {
+    public static ListPage<TbTransHash> queryTransList(Client client, String blockHash, BigInteger blockNumber, Integer pageIndex, Integer pageSize, int timeout) throws BrokerException {
         ListPage<TbTransHash> tbTransHashListPage = new ListPage<>();
         List<TbTransHash> tbTransHashes = new ArrayList<>();
 
         try {
             if (blockHash != null) {
                 // get TbTransHash list by blockHash
-                BcosBlock bcosBlock = web3j.getBlockByHash(blockHash, true)
-                        .sendAsync().get(timeout, TimeUnit.MILLISECONDS);
+                BcosBlock bcosBlock = client.getBlockByHash(blockHash, true);
 
                 generateTbTransHashListPage(pageIndex, pageSize, tbTransHashListPage, tbTransHashes, bcosBlock);
             } else {
                 // get TbTransHash list by blockNumber
                 BigInteger blockNum = blockNumber;
                 if (blockNumber == null) {
-                    blockNum = web3j.getBlockNumber().sendAsync().get(timeout, TimeUnit.MILLISECONDS).getBlockNumber();
+                    blockNum = client.getBlockNumber().getBlockNumber();
                 }
-                BcosBlock bcosBlock = web3j.getBlockByNumber(DefaultBlockParameter.valueOf(blockNum), true)
-                        .sendAsync().get(timeout, TimeUnit.MILLISECONDS);
+                BcosBlock bcosBlock = client.getBlockByNumber(blockNumber, true);
 
                 generateTbTransHashListPage(pageIndex, pageSize, tbTransHashListPage, tbTransHashes, bcosBlock);
             }
@@ -342,11 +305,11 @@ public class Web3SDK2Wrapper {
         Integer transSize = (transCount <= pageIndex * pageSize) ? (transCount - ((pageIndex - 1) * pageSize)) : pageSize;
         Integer transIndexStart = (pageIndex - 1) * pageSize;
 
-        List<Transaction> transactionHashList = block.getTransactions().stream()
-                .map(transactionResult -> (Transaction) transactionResult.get()).collect(Collectors.toList()).subList(transIndexStart, transSize + transIndexStart);
+        List<JsonTransactionResponse> transactionHashList = block.getTransactions().stream()
+                .map(transactionResult -> (JsonTransactionResponse) transactionResult.get()).collect(Collectors.toList()).subList(transIndexStart, transSize + transIndexStart);
         transactionHashList.forEach(tx -> {
             TbTransHash tbTransHash = new TbTransHash(tx.getHash(), tx.getFrom(), tx.getTo(),
-                    tx.getBlockNumber(), DataTypeUtils.getTimestamp(bcosBlock.getBlock().getTimestamp().longValue()));
+                    tx.getBlockNumber(), DataTypeUtils.getTimestamp(Numeric.decodeQuantity(bcosBlock.getBlock().getTimestamp()).longValue()));
             tbTransHashes.add(tbTransHash);
         });
         tbTransHashListPage.setPageSize(transSize);
@@ -355,26 +318,24 @@ public class Web3SDK2Wrapper {
     }
 
     //Traverse block
-    public static ListPage<TbBlock> queryBlockList(Web3j web3j, String blockHash, BigInteger blockNumber, Integer pageIndex, Integer pageSize, int timeout) throws BrokerException {
+    public static ListPage<TbBlock> queryBlockList(Client client, String blockHash, BigInteger blockNumber, Integer pageIndex, Integer pageSize, int timeout) throws BrokerException {
         ListPage<TbBlock> tbBlockListPage = new ListPage<>();
         List<TbBlock> tbBlocks = new CopyOnWriteArrayList<>();
         Integer blockCount;
         try {
             BcosBlock.Block block;
             if (blockHash != null) {
-                BcosBlock bcosBlock = web3j.getBlockByHash(blockHash, true)
-                        .sendAsync().get(timeout, TimeUnit.MILLISECONDS);
+                BcosBlock bcosBlock = client.getBlockByHash(blockHash, true);
                 block = bcosBlock.getBlock();
                 blockCount = 1;
                 getTbBlockList(tbBlocks, block);
             } else if (blockNumber != null) {
-                BcosBlock bcosBlock = web3j.getBlockByNumber(new DefaultBlockParameterNumber(blockNumber), true)
-                        .sendAsync().get(timeout, TimeUnit.MILLISECONDS);
+                BcosBlock bcosBlock = client.getBlockByNumber(blockNumber, true);
                 block = bcosBlock.getBlock();
                 blockCount = 1;
                 getTbBlockList(tbBlocks, block);
             } else {
-                int blockNum = web3j.getBlockNumber().sendAsync().get(timeout, TimeUnit.MILLISECONDS).getBlockNumber().intValue();
+                int blockNum = client.getBlockNumber().getBlockNumber().intValue();
                 if (pageIndex < 1 || (pageIndex - 1) * pageSize > blockNum) {
                     log.error("pageIndex error.");
                     throw new BrokerException("pageIndex error.");
@@ -388,7 +349,7 @@ public class Web3SDK2Wrapper {
                     blockNumberIndex++;
                 }
                 blockCount = blockNum;
-                tbBlocks = getTbBlock(web3j, blockNums, timeout);
+                tbBlocks = getTbBlock(client, blockNums, timeout);
 
                 tbBlocks.sort((arg0, arg1) -> arg1.getBlockNumber().compareTo(arg0.getBlockNumber()));
             }
@@ -411,7 +372,7 @@ public class Web3SDK2Wrapper {
             throw new BrokerException(ErrorCode.WEB3SDK_RPC_ERROR);
         }
 
-        String blockTimestamp = DataTypeUtils.getTimestamp(block.getTimestamp().longValue());
+        String blockTimestamp = DataTypeUtils.getTimestamp(Numeric.decodeQuantity(block.getTimestamp()).longValue());
 
         int transactions = 0;
         if (!block.getTransactions().isEmpty()) {
@@ -424,27 +385,26 @@ public class Web3SDK2Wrapper {
         tbBlocks.add(tbBlock);
     }
 
-    public static synchronized ListPage<TbNode> queryNodeList(Web3j web3j, int timeout) throws BrokerException {
+    public static synchronized ListPage<TbNode> queryNodeList(Client client, int timeout) throws BrokerException {
         ListPage<TbNode> tbNodeListPage = new ListPage<>();
         //1、Current node, pbftview, and blockNumber
         List<TbNode> tbNodes = new ArrayList<>();
         try {
 
-            List<String> observerList = web3j.getObserverList().sendAsync().get(timeout, TimeUnit.MILLISECONDS).getObserverList();
-            List<String> sealerList = web3j.getSealerList().sendAsync().get(timeout, TimeUnit.MILLISECONDS).getSealerList();
+            List<String> observerList = client.getObserverList().getObserverList();
+            List<String> sealerList = client.getSealerList().getSealerList();
 
             if (CollectionUtils.isEmpty(sealerList)) {
-                log.error("nodeList query from web3j is empty.");
-                throw new BrokerException("nodeList query from web3j is empty");
+                log.error("nodeList query from client is empty.");
+                throw new BrokerException("nodeList query from client is empty");
             }
 
-            List<String> nodeIds = web3j.getNodeIDList()
-                    .sendAsync().get(timeout, TimeUnit.MILLISECONDS).getNodeIDList();
+            List<String> nodeIds = client.getNodeIDList().getNodeIDList();
 
             // get PbftView from each nodes
-            Map<String, Map<String, String>> nodeViews = getNodeViews(web3j);
+            Map<String, Map<String, String>> nodeViews = getNodeViews(client);
             // get blockNum from each nodes
-            Map<String, Map<String, String>> nodeBlockNums = getBlockNums(web3j);
+            Map<String, Map<String, String>> nodeBlockNums = getBlockNums(client);
 
             for (String sealerNodeId : sealerList) {
                 TbNode tbNode = generateTbNode(nodeViews, nodeBlockNums, sealerNodeId, nodeIds);
@@ -467,42 +427,31 @@ public class Web3SDK2Wrapper {
         }
     }
 
-    private static Map<String, Map<String, String>> getNodeViews(Web3j web3j) throws IOException {
-        JsonNode jsonNode = JsonHelper.getObjectMapper().readTree(web3j.getConsensusStatus().sendForReturnString());
+    private static Map<String, Map<String, String>> getNodeViews(Client client) throws IOException {
         Map<String, Map<String, String>> nodeViews = new HashMap<>();
-        for (JsonNode node : jsonNode) {
-            if (node.isArray()) {
-                convertJsonArrayToList(nodeViews, node);
-            }
+        ConsensusStatus.ConsensusInfo consensusStatus = client.getConsensusStatus().getConsensusStatus();
+        List<ConsensusStatus.ViewInfo> viewInfos = consensusStatus.getViewInfos();
+        Map<String, String> map = new HashMap<>();
+        for(ConsensusStatus.ViewInfo viewInfo : viewInfos)
+        {
+            map.put(viewInfo.getNodeId(), viewInfo.getView());
         }
+        nodeViews.put(consensusStatus.getBaseConsensusInfo().getNodeId(), map);
         return nodeViews;
     }
 
-    private static Map<String, Map<String, String>> getBlockNums(Web3j web3j) throws IOException {
-        JsonNode jsonObj = JsonHelper.getObjectMapper().readTree(web3j.getSyncStatus().sendForReturnString());
+    private static Map<String, Map<String, String>> getBlockNums(Client client) throws ClientException {
         Map<String, Map<String, String>> nodeBlockNums = new HashMap<>();
-
-        Map<String, String> map = new HashMap<>();
-        jsonObj.fields().forEachRemaining(entry -> {
-            if (BLOCK_NUMBER.equals(entry.getKey()) || NODE_ID.equals(entry.getKey())) {
-                map.put(entry.getKey(), entry.getValue().asText());
-            }
-            if (PEERS.equals(entry.getKey())) {
-                convertJsonArrayToList(nodeBlockNums, entry.getValue());
-            }
-        });
-        nodeBlockNums.put(jsonObj.get(NODE_ID).asText(), map);
+        SyncStatus.SyncStatusInfo syncStatusInfo = client.getSyncStatus().getSyncStatus();
+       List<SyncStatus.PeersInfo> peers =  syncStatusInfo.getPeers();
+       Map<String, String> map = new HashMap<>();
+       map.put(syncStatusInfo.getNodeId(), syncStatusInfo.getBlockNumber());
+       for(SyncStatus.PeersInfo peer : peers)
+       {
+           map.put(syncStatusInfo.getNodeId(), peer.getBlockNumber());
+       }
+       nodeBlockNums.put(syncStatusInfo.getNodeId(), map);
         return nodeBlockNums;
-    }
-
-    private static void convertJsonArrayToList(Map<String, Map<String, String>> map, JsonNode jsonArray) {
-        for (JsonNode jsonObj : jsonArray) {
-            if (jsonObj.isObject()) {
-                Map<String, String> objMap = new HashMap<>();
-                jsonObj.fields().forEachRemaining(entry -> objMap.put(entry.getKey(), entry.getValue().asText()));
-                map.put(jsonObj.get(NODE_ID).asText(), objMap);
-            }
-        }
     }
 
     private static TbNode generateTbNode(Map<String, Map<String, String>> nodeViews,
@@ -529,16 +478,15 @@ public class Web3SDK2Wrapper {
         return nodeIds.contains(nodeId) ? 1 : 0;
     }
 
-    private static List<TbBlock> getTbBlock(Web3j web3j, List<Long> blockNums, int timeout) throws ExecutionException, InterruptedException {
+    private static List<TbBlock> getTbBlock(Client client, List<Long> blockNums, int timeout) throws ExecutionException, InterruptedException {
 
         List<CompletableFuture<TbBlock>> futureList = new ArrayList<>();
         for (Long blockNumber : blockNums) {
             CompletableFuture<TbBlock> future = CompletableFuture.supplyAsync(() -> {
                 BcosBlock bcosBlock;
                 try {
-                    bcosBlock = web3j.getBlockByNumber(new DefaultBlockParameterNumber(blockNumber), true)
-                            .sendAsync().get(timeout, TimeUnit.MILLISECONDS);
-                } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                    bcosBlock = client.getBlockByNumber(BigInteger.valueOf(blockNumber), true);
+                } catch (InterruptedException | ExecutionException | ClientException| TimeoutException e) {
                     log.error("query block by blockNumber failed. e:", e);
                     return null;
                 }
@@ -547,7 +495,7 @@ public class Web3SDK2Wrapper {
                     return null;
                 }
 
-                String blockTimestamp = DataTypeUtils.getTimestamp(block.getTimestamp().longValue());
+                String blockTimestamp = DataTypeUtils.getTimestamp(Numeric.decodeQuantity(block.getTimestamp()).longValue());
                 int transactions = 0;
                 if (!block.getTransactions().isEmpty()) {
                     transactions = block.getTransactions().size();
